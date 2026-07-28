@@ -28,12 +28,14 @@ if REDIS_SENTINELS:
         sentinel = Sentinel(
             sentinel_hosts, 
             socket_timeout=REDIS_SOCKET_TIMEOUT, 
+            socket_connect_timeout=REDIS_SOCKET_TIMEOUT,
             password=REDIS_PASSWORD
         )
         # Resolve the active master node dynamically
         redis_client = sentinel.master_for(
             REDIS_MASTER_NAME, 
             socket_timeout=REDIS_SOCKET_TIMEOUT, 
+            socket_connect_timeout=REDIS_SOCKET_TIMEOUT,
             password=REDIS_PASSWORD
         )
         
@@ -43,5 +45,6 @@ if redis_client is None:
         host=os.environ.get("REDIS_HOST", "localhost"),
         port=int(os.environ.get("REDIS_PORT", 6379)),
         password=REDIS_PASSWORD,
-        socket_timeout=REDIS_SOCKET_TIMEOUT
+        socket_timeout=REDIS_SOCKET_TIMEOUT,
+        socket_connect_timeout=REDIS_SOCKET_TIMEOUT
     )
