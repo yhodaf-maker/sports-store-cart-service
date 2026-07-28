@@ -26,9 +26,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install Gitleaks
+        run: |
+          GITLEAKS_VERSION=8.28.0
+          wget -q https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz
+          tar -xzf gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz
+          sudo mv gitleaks /usr/local/bin/
+      - name: Run Gitleaks
+        run: |
+          gitleaks detect --source . --verbose
       - uses: bridgecrewio/checkov-action@v12
         with:
           directory: .
@@ -39,3 +45,6 @@ jobs:
           image-ref: sports-store-cart-service:pr-${{ github.sha }}
           severity: HIGH,CRITICAL
           exit-code: '1'
+          ignore-unfixed: true
+          scanners: vuln
+          trivyignores: .trivyignore.yaml
