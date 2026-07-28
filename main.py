@@ -26,6 +26,14 @@ async def create_indexes():
         await carts_collection.create_index("user_id", unique=True)
     except Exception as exc:  # Mongo may be unavailable (e.g. unit tests)
         logger.warning("Index creation skipped: %s", exc)
+    
+    # Verify Redis connectivity
+    try:
+        from cache import redis_client
+        redis_client.ping()
+        logger.info("Redis connection verified.")
+    except Exception as exc:
+        logger.warning("Redis is offline: %s", exc)
 
 
 @app.get("/health")

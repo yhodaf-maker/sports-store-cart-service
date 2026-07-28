@@ -16,17 +16,45 @@ def cart_response(items: list[dict]) -> dict:
     return {"items": items, "subtotal": subtotal}
 
 
+import json
+from cache import redis_client
+
 async def load_items(user_id: str) -> list[dict]:
+    cache_key = f"cart:{user_id}"
+    try:
+        # Check cache first
+        cached = redis_client.get(cache_key)
+        if cached:
+            return json.loads(cached.decode("utf-8"))
+    except Exception as e:
+        # Fail-safe: log warning but don't fail the request (resilient database fallback)
+        print(f"WARNING: Redis read error: {e}")
+
+    # Cache miss -> Query MongoDB
     cart = await carts_collection.find_one({"user_id": user_id})
-    return cart["items"] if cart else []
+    items = cart["items"] if cart else []
+
+    # Write-through: Populate cache with 24h TTL
+    try:
+        redis_client.set(cache_key, json.dumps(items), ex=86400)
+    except Exception as e:
+        print(f"WARNING: Redis write error: {e}")
+        
+    return items
 
 
 async def save_items(user_id: str, items: list[dict]) -> None:
+    # Save to MongoDB
     await carts_collection.update_one(
         {"user_id": user_id},
         {"$set": {"items": items, "updated_at": datetime.now(timezone.utc)}},
         upsert=True,
     )
+    # Instantly update cache
+    try:
+        redis_client.set(f"cart:{user_id}", json.dumps(items), ex=86400)
+    except Exception as e:
+        print(f"WARNING: Redis write error: {e}")
 
 
 @router.get("")
@@ -98,4 +126,8 @@ async def remove_item(sku: str, user: dict = Depends(get_current_user)):
 @router.delete("")
 async def clear_cart(user: dict = Depends(get_current_user)):
     await carts_collection.delete_one({"user_id": user["sub"]})
+    try:
+        redis_client.delete(f"cart:{user['sub']}")
+    except Exception as e:
+        print(f"WARNING: Redis delete error: {e}")
     return {"message": "Cart cleared"}
