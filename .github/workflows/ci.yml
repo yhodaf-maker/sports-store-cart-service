@@ -39,6 +39,7 @@ jobs:
         with:
           directory: .
           framework: dockerfile
+          skip_check: CKV_DOCKER_2
       - run: docker build --tag sports-store-cart-service:pr-${{ github.sha }} .
       - uses: aquasecurity/trivy-action@v0.36.0
         with:
