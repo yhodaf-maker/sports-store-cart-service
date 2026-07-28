@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
-
+import json
+from cache import redis_client
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
 
@@ -15,9 +16,6 @@ def cart_response(items: list[dict]) -> dict:
     subtotal = round(sum(i["quantity"] * i["unit_price"] for i in items), 2)
     return {"items": items, "subtotal": subtotal}
 
-
-import json
-from cache import redis_client
 
 async def load_items(user_id: str) -> list[dict]:
     cache_key = f"cart:{user_id}"
