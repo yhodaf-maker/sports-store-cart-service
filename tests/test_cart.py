@@ -1,5 +1,7 @@
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 USER_ID = "507f1f77bcf86cd799439011"
 
 VARIANT_SNAPSHOT = {
@@ -12,6 +14,13 @@ VARIANT_SNAPSHOT = {
     "price": 129.99,
     "stock_quantity": 15,
 }
+
+
+@pytest.fixture(autouse=True)
+def mock_redis_cache():
+    with patch("routes.cart.redis_client") as redis_client:
+        redis_client.get.return_value = None
+        yield redis_client
 
 
 def cart_item(quantity=2):

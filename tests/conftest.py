@@ -1,7 +1,7 @@
 import os
 from datetime import datetime, timedelta, timezone
 
-os.environ["JWT_SECRET"] = "test-secret"
+os.environ["JWT_SECRET"] = "test-secret-that-is-at-least-thirty-two-bytes"
 
 import jwt
 import pytest
@@ -44,7 +44,11 @@ def make_token(user_id="507f1f77bcf86cd799439011", email="user@test.com",
         "role": role,
         "exp": datetime.now(timezone.utc) + timedelta(minutes=expires_minutes),
     }
-    return jwt.encode(payload, "test-secret", algorithm="HS256")
+    return jwt.encode(
+        payload,
+        "test-secret-that-is-at-least-thirty-two-bytes",
+        algorithm="HS256",
+    )
 
 
 @pytest.fixture

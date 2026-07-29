@@ -1,23 +1,26 @@
+import json
+import logging
 from datetime import datetime, timezone
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
+from redis.exceptions import RedisError
 
 import catalog_client
+from cache import redis_client
 from database import carts_collection
 from models import AddItemRequest, UpdateItemRequest
 from security import bearer_scheme, get_current_user
 
 router = APIRouter(prefix="/cart", tags=["cart"])
+logger = logging.getLogger("cart-service")
 
 
 def cart_response(items: list[dict]) -> dict:
     subtotal = round(sum(i["quantity"] * i["unit_price"] for i in items), 2)
     return {"items": items, "subtotal": subtotal}
 
-
-import json
-from cache import redis_client
 
 async def load_items(user_id: str) -> list[dict]:
     cache_key = f"cart:{user_id}"
@@ -26,9 +29,8 @@ async def load_items(user_id: str) -> list[dict]:
         cached = redis_client.get(cache_key)
         if cached:
             return json.loads(cached.decode("utf-8"))
-    except Exception as e:
-        # Fail-safe: log warning but don't fail the request (resilient database fallback)
-        print(f"WARNING: Redis read error: {e}")
+    except (RedisError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+        logger.warning("Redis read skipped: %s", exc)
 
     # Cache miss -> Query MongoDB
     cart = await carts_collection.find_one({"user_id": user_id})
@@ -37,9 +39,9 @@ async def load_items(user_id: str) -> list[dict]:
     # Write-through: Populate cache with 24h TTL
     try:
         redis_client.set(cache_key, json.dumps(items), ex=86400)
-    except Exception as e:
-        print(f"WARNING: Redis write error: {e}")
-        
+    except RedisError as exc:
+        logger.warning("Redis write skipped: %s", exc)
+
     return items
 
 
@@ -53,20 +55,22 @@ async def save_items(user_id: str, items: list[dict]) -> None:
     # Instantly update cache
     try:
         redis_client.set(f"cart:{user_id}", json.dumps(items), ex=86400)
-    except Exception as e:
-        print(f"WARNING: Redis write error: {e}")
+    except RedisError as exc:
+        logger.warning("Redis write skipped: %s", exc)
 
 
 @router.get("")
-async def get_cart(user: dict = Depends(get_current_user)):
+async def get_cart(user: Annotated[dict, Depends(get_current_user)]):
     return cart_response(await load_items(user["sub"]))
 
 
 @router.post("/items")
 async def add_item(
     payload: AddItemRequest,
-    user: dict = Depends(get_current_user),
-    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    user: Annotated[dict, Depends(get_current_user)],
+    credentials: Annotated[
+        HTTPAuthorizationCredentials, Depends(bearer_scheme)
+    ],
 ):
     variant = await catalog_client.get_variant(payload.sku, credentials.credentials)
 
@@ -99,7 +103,7 @@ async def add_item(
 async def update_item(
     sku: str,
     payload: UpdateItemRequest,
-    user: dict = Depends(get_current_user),
+    user: Annotated[dict, Depends(get_current_user)],
 ):
     items = await load_items(user["sub"])
     existing = next((i for i in items if i["sku"] == sku), None)
@@ -114,7 +118,9 @@ async def update_item(
 
 
 @router.delete("/items/{sku}")
-async def remove_item(sku: str, user: dict = Depends(get_current_user)):
+async def remove_item(
+    sku: str, user: Annotated[dict, Depends(get_current_user)]
+):
     items = await load_items(user["sub"])
     if not any(i["sku"] == sku for i in items):
         raise HTTPException(status_code=404, detail="Item not in cart")
@@ -124,10 +130,10 @@ async def remove_item(sku: str, user: dict = Depends(get_current_user)):
 
 
 @router.delete("")
-async def clear_cart(user: dict = Depends(get_current_user)):
+async def clear_cart(user: Annotated[dict, Depends(get_current_user)]):
     await carts_collection.delete_one({"user_id": user["sub"]})
     try:
         redis_client.delete(f"cart:{user['sub']}")
-    except Exception as e:
-        print(f"WARNING: Redis delete error: {e}")
+    except RedisError as exc:
+        logger.warning("Redis delete skipped: %s", exc)
     return {"message": "Cart cleared"}

@@ -1,4 +1,5 @@
 import os
+
 import redis
 from redis.sentinel import Sentinel
 
@@ -22,26 +23,29 @@ if REDIS_SENTINELS:
             sentinel_hosts.append((host, int(port)))
         else:
             sentinel_hosts.append((s, 26379))
-            
+
     if sentinel_hosts:
         # Connect to Sentinel pool
         sentinel = Sentinel(
-            sentinel_hosts, 
-            socket_timeout=REDIS_SOCKET_TIMEOUT, 
-            password=REDIS_PASSWORD
+            sentinel_hosts,
+            socket_timeout=REDIS_SOCKET_TIMEOUT,
+            socket_connect_timeout=REDIS_SOCKET_TIMEOUT,
+            password=REDIS_PASSWORD,
         )
         # Resolve the active master node dynamically
         redis_client = sentinel.master_for(
-            REDIS_MASTER_NAME, 
-            socket_timeout=REDIS_SOCKET_TIMEOUT, 
-            password=REDIS_PASSWORD
+            REDIS_MASTER_NAME,
+            socket_timeout=REDIS_SOCKET_TIMEOUT,
+            socket_connect_timeout=REDIS_SOCKET_TIMEOUT,
+            password=REDIS_PASSWORD,
         )
-        
+
 if redis_client is None:
     # Standalone fallback for local compose development
     redis_client = redis.Redis(
         host=os.environ.get("REDIS_HOST", "localhost"),
-        port=int(os.environ.get("REDIS_PORT", 6379)),
+        port=int(os.environ.get("REDIS_PORT", "6379")),
         password=REDIS_PASSWORD,
-        socket_timeout=REDIS_SOCKET_TIMEOUT
+        socket_timeout=REDIS_SOCKET_TIMEOUT,
+        socket_connect_timeout=REDIS_SOCKET_TIMEOUT,
     )

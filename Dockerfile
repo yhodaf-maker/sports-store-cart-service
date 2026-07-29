@@ -1,28 +1,29 @@
 # ---- Build stage --------------------------------------------------------
-FROM python:3.11.9-alpine AS build
+FROM python:3.11.15-slim-trixie@sha256:db3ff2e1800a8581e2c48a27c3995339d47bdf046da21c7627accd3d51053a93 AS build
 
 WORKDIR /app
 
-# Build tooling for any dependency without a prebuilt musllinux wheel;
-# discarded along with this stage, so it never reaches the runtime image.
-RUN apk add --no-cache --virtual .build-deps build-base libffi-dev
-
 COPY requirements.txt .
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+RUN python -m pip install --no-cache-dir --prefix=/install -r requirements.txt
 
-# ---- Runtime stage --------------------------------------------------------
-FROM python:3.11.9-alpine
+# ---- Runtime stage ------------------------------------------------------
+FROM python:3.11.15-slim-trixie@sha256:db3ff2e1800a8581e2c48a27c3995339d47bdf046da21c7627accd3d51053a93
 
-RUN addgroup -S -g 10001 cart \
-    && adduser -S -D -H -u 10001 -G cart cart
+RUN python -m pip uninstall --yes pip setuptools wheel \
+    && groupadd --gid 10001 cart \
+    && useradd --uid 10001 --gid cart --no-create-home --home-dir /app \
+      --shell /usr/sbin/nologin cart
 
 WORKDIR /app
 
 COPY --from=build /install /usr/local
 COPY --chown=cart:cart . .
 
-USER 10001
+USER 10001:10001
 
 EXPOSE 8003
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8003"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8003/health', timeout=4).read()"]
+
+CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8003"]

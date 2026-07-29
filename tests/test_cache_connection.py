@@ -1,7 +1,10 @@
-import unittest
-import sys
 import json
-from unittest.mock import patch, MagicMock, AsyncMock
+import sys
+import unittest
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from redis.exceptions import ConnectionError as RedisConnectionError
+
 
 class TestCacheConnection(unittest.TestCase):
     def setUp(self):
@@ -28,12 +31,14 @@ class TestCacheConnection(unittest.TestCase):
         mock_sentinel.assert_called_once_with(
             [('sentinel-service', 26379)],
             socket_timeout=0.2,
+            socket_connect_timeout=0.2,
             password='testpassword'
         )
         
         mock_sentinel_instance.master_for.assert_called_once_with(
             'mymaster',
             socket_timeout=0.2,
+            socket_connect_timeout=0.2,
             password='testpassword'
         )
         self.assertEqual(cache.redis_client, mock_sentinel_instance.master_for.return_value)
@@ -51,7 +56,8 @@ class TestCacheConnection(unittest.TestCase):
                 host='localhost',
                 port=6379,
                 password='fallbackpassword',
-                socket_timeout=0.2
+                socket_timeout=0.2,
+                socket_connect_timeout=0.2,
             )
             self.assertEqual(cache.redis_client, mock_redis.return_value)
 
@@ -85,6 +91,28 @@ class TestCartCacheRoutes(unittest.IsolatedAsyncioTestCase):
         mock_redis_client.get.assert_called_once_with("cart:user_123")
         mock_collection.find_one.assert_called_once_with({"user_id": "user_123"})
         mock_redis_client.set.assert_called_once_with("cart:user_123", json.dumps([{"sku": "item2", "quantity": 1}]), ex=86400)
+
+    @patch('routes.cart.redis_client')
+    @patch('routes.cart.carts_collection')
+    async def test_load_items_falls_back_when_cache_is_unavailable(
+        self, mock_collection, mock_redis_client
+    ):
+        mock_redis_client.get.side_effect = RedisConnectionError("Redis unavailable")
+        mock_redis_client.set.side_effect = RedisConnectionError("Redis unavailable")
+        items = [{"sku": "item4", "quantity": 3}]
+        mock_collection.find_one = AsyncMock(
+            return_value={"user_id": "user_123", "items": items}
+        )
+
+        from routes.cart import load_items
+
+        result = await load_items("user_123")
+
+        self.assertEqual(result, items)
+        mock_collection.find_one.assert_awaited_once_with({"user_id": "user_123"})
+        mock_redis_client.set.assert_called_once_with(
+            "cart:user_123", json.dumps(items), ex=86400
+        )
 
     @patch('routes.cart.redis_client')
     @patch('routes.cart.carts_collection')
