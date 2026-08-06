@@ -31,6 +31,7 @@ if REDIS_SENTINELS:
             socket_timeout=REDIS_SOCKET_TIMEOUT,
             socket_connect_timeout=REDIS_SOCKET_TIMEOUT,
             password=REDIS_PASSWORD,
+            sentinel_kwargs={"password": REDIS_PASSWORD},
         )
         # Resolve the active master node dynamically
         redis_client = sentinel.master_for(

@@ -32,7 +32,8 @@ class TestCacheConnection(unittest.TestCase):
             [('sentinel-service', 26379)],
             socket_timeout=0.2,
             socket_connect_timeout=0.2,
-            password='testpassword'
+            password='testpassword',
+            sentinel_kwargs={'password': 'testpassword'}
         )
         
         mock_sentinel_instance.master_for.assert_called_once_with(
